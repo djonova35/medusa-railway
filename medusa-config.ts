@@ -16,6 +16,15 @@ module.exports = defineConfig({
       authCors: process.env.AUTH_CORS || "",
       jwtSecret: process.env.JWT_SECRET || "supersecret",
       cookieSecret: process.env.COOKIE_SECRET || "supersecret",
+      {
+  resolve: `medusa-file-cloudinary`,
+  options: {
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+  },
+},
     },
   },
   admin: {
