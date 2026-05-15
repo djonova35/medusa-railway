@@ -16,15 +16,6 @@ module.exports = defineConfig({
       authCors: process.env.AUTH_CORS || "",
       jwtSecret: process.env.JWT_SECRET || "supersecret",
       cookieSecret: process.env.COOKIE_SECRET || "supersecret",
-      {
-  resolve: `medusa-file-cloudinary`,
-  options: {
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-    secure: true,
-  },
-},
     },
   },
   admin: {
@@ -32,10 +23,16 @@ module.exports = defineConfig({
     // Setting an absolute fallback (e.g. http://localhost:9000) gets baked into
     // the bundle at `medusa build` time and breaks production logins with
     // "Failed to fetch" (mixed-content / cross-origin).
-    backendUrl: process.env.BACKEND_URL || "",
-    disable: process.env.DISABLE_MEDUSA_ADMIN === "true",
   },
-  modules: [
-    { key: "api_key", resolve: "@medusajs/medusa/api-key" },
+  plugins: [
+    {
+      resolve: `medusa-file-cloudinary`,
+      options: {
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+        secure: true,
+      },
+    },
   ],
 })
