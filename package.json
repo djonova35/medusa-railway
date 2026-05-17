@@ -9,7 +9,7 @@
     "dev": "medusa develop"
   },
   "dependencies": {
-    "medusa-file-cloudinary": "1.0.2",
+    "@medusajs/file-s3": "^2.0.0",
     "@medusajs/admin-sdk": "2.13.6",
     "@medusajs/cli": "2.13.6",
     "@medusajs/framework": "2.13.6",
