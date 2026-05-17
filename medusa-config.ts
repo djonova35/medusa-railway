@@ -19,19 +19,17 @@ module.exports = defineConfig({
     },
   },
   admin: {
-    // Leave empty so the admin Vite bundle uses same-origin relative URLs.
-    // Setting an absolute fallback (e.g. http://localhost:9000) gets baked into
-    // the bundle at `medusa build` time and breaks production logins with
-    // "Failed to fetch" (mixed-content / cross-origin).
   },
-  plugins: [
+  modules: [
     {
-      resolve: `medusa-file-cloudinary`,
+      resolve: "@medusajs/file-s3",
       options: {
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_API_SECRET,
-        secure: true,
+        file_url: process.env.S3_FILE_URL,
+        access_key_id: process.env.S3_ACCESS_KEY_ID,
+        secret_access_key: process.env.S3_SECRET_ACCESS_KEY,
+        region: process.env.S3_REGION,
+        bucket: process.env.S3_BUCKET,
+        endpoint: process.env.S3_ENDPOINT,
       },
     },
   ],
