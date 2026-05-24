@@ -9,7 +9,7 @@
     "dev": "medusa develop"
   },
   "dependencies": {
-    "@medusajs/payment-stripe": "2.13.6"
+    "@medusajs/payment-stripe": "2.13.6",
     "@medusajs/file-s3": "2.13.6",
     "@medusajs/admin-sdk": "2.13.6",
     "@medusajs/cli": "2.13.6",
