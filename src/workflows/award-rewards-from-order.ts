@@ -29,6 +29,23 @@ type AwardRewardsStepInput = {
   currency_code: string
 }
 
+type AwardRewardsStepOutput = {
+  skipped: boolean
+  reason: string | null
+  customer_id: string | null
+  points_earned: number
+  cashback_earned_gbp: number
+  effective_tier: TierKey | null
+  natural_tier: TierKey | null
+}
+
+type AwardRewardsStepCompensationInput =
+  | {
+      customer_id: string
+      previous_metadata: RewardsMetadata
+    }
+  | undefined
+
 const toNumber = (value: unknown) => {
   if (typeof value === "number") return value
   if (typeof value === "string") {
@@ -50,7 +67,6 @@ const convertOrderAmountToGbp = (amountMajor: number, currencyCode: string) => {
   if (code === "EUR") return amountMajor / 1.17
   if (code === "CAD") return amountMajor / 1.73
 
-  // Safe fallback: if unsupported currency appears, treat as GBP-equivalent
   return amountMajor
 }
 
@@ -96,14 +112,26 @@ const getPointsRate = (tier: TierKey) => {
   return 1
 }
 
-const awardRewardsStep = createStep(
+const awardRewardsStep = createStep<
+  AwardRewardsStepInput,
+  AwardRewardsStepOutput,
+  AwardRewardsStepCompensationInput
+>(
   "award-rewards-step",
-  async (input: AwardRewardsStepInput, { container }) => {
+  async (input, { container }) => {
     if (!input.customer_id) {
-      return new StepResponse({
-        skipped: true,
-        reason: "Order has no customer_id",
-      })
+      return new StepResponse(
+        {
+          skipped: true,
+          reason: "Order has no customer_id",
+          customer_id: null,
+          points_earned: 0,
+          cashback_earned_gbp: 0,
+          effective_tier: null,
+          natural_tier: null,
+        },
+        undefined
+      )
     }
 
     const customerModuleService = container.resolve(Modules.CUSTOMER)
@@ -154,13 +182,15 @@ const awardRewardsStep = createStep(
       ),
     }
 
-    await customerModuleService.updateCustomers({
-      id: input.customer_id,
-      metadata: nextMetadata,
-    })
+    await customerModuleService.updateCustomers(
+      { id: input.customer_id },
+      { metadata: nextMetadata }
+    )
 
     return new StepResponse(
       {
+        skipped: false,
+        reason: null,
         customer_id: input.customer_id,
         points_earned: pointsEarned,
         cashback_earned_gbp: cashbackEarnedGbp,
@@ -180,10 +210,10 @@ const awardRewardsStep = createStep(
 
     const customerModuleService = container.resolve(Modules.CUSTOMER)
 
-    await customerModuleService.updateCustomers({
-      id: compensationInput.customer_id,
-      metadata: compensationInput.previous_metadata || {},
-    })
+    await customerModuleService.updateCustomers(
+      { id: compensationInput.customer_id },
+      { metadata: compensationInput.previous_metadata || {} }
+    )
   }
 )
 
