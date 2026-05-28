@@ -5,9 +5,10 @@ import {
   transform,
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk"
-import { Modules } from "@medusajs/framework/utils"
+import { MedusaError, Modules } from "@medusajs/framework/utils"
 
 type CurrencyCode = "gbp" | "usd" | "eur" | "cad"
+type VoucherLevel = 1 | 2 | 3
 
 type RewardsMetadata = {
   reward_points_balance?: number | string
@@ -18,8 +19,6 @@ type RewardsMetadata = {
   lounge_plan?: "silver_access" | "gold_access" | null
   lounge_status?: "inactive" | "active" | "past_due" | "cancelled" | null
 }
-
-type VoucherLevel = 1 | 2 | 3
 
 type WorkflowInput = {
   customer_id: string
@@ -54,7 +53,7 @@ const getVoucherConfig = (level: VoucherLevel, currencyCode: CurrencyCode) => {
         : { points: 300, valueGbp: 15, minOrderGbp: 60 }
 
   return {
-    level,
+    voucher_level: level,
     points_to_deduct: base.points,
     voucher_value: convertFromGbp(base.valueGbp, currencyCode),
     minimum_order_amount: convertFromGbp(base.minOrderGbp, currencyCode),
@@ -70,7 +69,80 @@ const generateVoucherCode = (level: VoucherLevel) => {
   return `REWARD-L${level}-${suffix}`
 }
 
-type CreatePromotionStepInput = {
+type DeductVoucherPointsStepInput = {
+  customer_id: string
+  current_metadata: RewardsMetadata
+  points_to_deduct: number
+}
+
+type DeductVoucherPointsStepOutput = {
+  remaining_points: number
+  points_spent: number
+}
+
+type DeductVoucherPointsCompensationInput = {
+  customer_id: string
+  previous_metadata: RewardsMetadata
+}
+
+const deductVoucherPointsStep = createStep<
+  DeductVoucherPointsStepInput,
+  DeductVoucherPointsStepOutput,
+  DeductVoucherPointsCompensationInput
+>(
+  "deduct-voucher-points-step",
+  async (input, { container }) => {
+    const customerModuleService = container.resolve(Modules.CUSTOMER)
+
+    const currentMetadata = input.current_metadata || {}
+    const currentPointsBalance = toNumber(currentMetadata.reward_points_balance)
+    const currentRedeemedTotal = toNumber(
+      currentMetadata.reward_points_redeemed_total
+    )
+
+    if (currentPointsBalance < input.points_to_deduct) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "Insufficient reward points."
+      )
+    }
+
+    const nextMetadata: RewardsMetadata = {
+      ...currentMetadata,
+      reward_points_balance: currentPointsBalance - input.points_to_deduct,
+      reward_points_redeemed_total:
+        currentRedeemedTotal + input.points_to_deduct,
+    }
+
+    await customerModuleService.updateCustomers(
+      { id: input.customer_id },
+      { metadata: nextMetadata }
+    )
+
+    return new StepResponse(
+      {
+        remaining_points: currentPointsBalance - input.points_to_deduct,
+        points_spent: input.points_to_deduct,
+      },
+      {
+        customer_id: input.customer_id,
+        previous_metadata: currentMetadata,
+      }
+    )
+  },
+  async (compensationInput, { container }) => {
+    if (!compensationInput?.customer_id) return
+
+    const customerModuleService = container.resolve(Modules.CUSTOMER)
+
+    await customerModuleService.updateCustomers(
+      { id: compensationInput.customer_id },
+      { metadata: compensationInput.previous_metadata || {} }
+    )
+  }
+)
+
+type CreateRewardVoucherPromotionStepInput = {
   customer_id: string
   voucher_level: VoucherLevel
   points_to_deduct: number
@@ -79,9 +151,22 @@ type CreatePromotionStepInput = {
   currency_code: CurrencyCode
 }
 
-const createRewardVoucherPromotionStep = createStep(
-  "create-reward-voucher-promotion",
-  async (input: CreatePromotionStepInput, { container }) => {
+type CreateRewardVoucherPromotionStepOutput = {
+  promotion_id: string
+  code: string
+  voucher_level: VoucherLevel
+  voucher_value: number
+  minimum_order_amount: number
+  currency_code: CurrencyCode
+}
+
+const createRewardVoucherPromotionStep = createStep<
+  CreateRewardVoucherPromotionStepInput,
+  CreateRewardVoucherPromotionStepOutput,
+  string
+>(
+  "create-reward-voucher-promotion-step",
+  async (input, { container }) => {
     const promotionModuleService = container.resolve(Modules.PROMOTION)
 
     const code = generateVoucherCode(input.voucher_level)
@@ -104,124 +189,64 @@ const createRewardVoucherPromotionStep = createStep(
           values: [input.customer_id],
         },
       ],
-      metadata: {
-        reward_source: "loyalty_points",
-        reward_voucher_level: String(input.voucher_level),
-        reward_points_spent: String(input.points_to_deduct),
-        reward_minimum_order_amount: String(input.minimum_order_amount),
-        reward_currency_code: input.currency_code,
-      },
     })
 
     return new StepResponse(
       {
-        promotion,
+        promotion_id: promotion.id,
         code,
+        voucher_level: input.voucher_level,
+        voucher_value: input.voucher_value,
+        minimum_order_amount: input.minimum_order_amount,
+        currency_code: input.currency_code,
       },
       promotion.id
     )
   },
   async (promotionId, { container }) => {
-    if (!promotionId) {
-      return
-    }
+    if (!promotionId) return
 
     const promotionModuleService = container.resolve(Modules.PROMOTION)
     await promotionModuleService.deletePromotions(promotionId)
   }
 )
 
-type DeductPointsStepInput = {
-  customer_id: string
-  current_metadata: RewardsMetadata
-  points_to_deduct: number
-}
-
-const deductVoucherPointsStep = createStep(
-  "deduct-voucher-points",
-  async (input: DeductPointsStepInput, { container }) => {
-    const customerModuleService = container.resolve(Modules.CUSTOMER)
-
-    const currentMetadata = input.current_metadata || {}
-    const currentPointsBalance = toNumber(currentMetadata.reward_points_balance)
-    const currentRedeemedTotal = toNumber(
-      currentMetadata.reward_points_redeemed_total
-    )
-
-    if (currentPointsBalance < input.points_to_deduct) {
-      throw new Error("Insufficient reward points.")
-    }
-
-    const nextMetadata: RewardsMetadata = {
-      ...currentMetadata,
-      reward_points_balance: currentPointsBalance - input.points_to_deduct,
-      reward_points_redeemed_total:
-        currentRedeemedTotal + input.points_to_deduct,
-    }
-
-    await customerModuleService.updateCustomers({
-      id: input.customer_id,
-      metadata: nextMetadata,
-    })
-
-    return new StepResponse(
-      {
-        remaining_points: currentPointsBalance - input.points_to_deduct,
-      },
-      {
-        customer_id: input.customer_id,
-        previous_metadata: currentMetadata,
-      }
-    )
-  },
-  async (compensationInput, { container }) => {
-    if (!compensationInput?.customer_id) {
-      return
-    }
-
-    const customerModuleService = container.resolve(Modules.CUSTOMER)
-
-    await customerModuleService.updateCustomers({
-      id: compensationInput.customer_id,
-      metadata: compensationInput.previous_metadata || {},
-    })
-  }
-)
-
 export const redeemVoucherRewardWorkflow = createWorkflow(
   "redeem-voucher-reward",
   (input: WorkflowInput) => {
-    const voucherInput = transform({ input }, ({ input }) => {
-      return {
-        customer_id: input.customer_id,
-        voucher_level: input.voucher_level,
-        ...getVoucherConfig(input.voucher_level, input.currency_code),
-      }
-    })
-
-    const createdVoucher = createRewardVoucherPromotionStep(voucherInput)
+    const voucherConfig = transform({ input }, ({ input }) =>
+      getVoucherConfig(input.voucher_level, input.currency_code)
+    )
 
     const deducted = deductVoucherPointsStep(
-      transform({ input, voucherInput }, ({ input, voucherInput }) => ({
+      transform({ input, voucherConfig }, ({ input, voucherConfig }) => ({
         customer_id: input.customer_id,
         current_metadata: input.current_metadata,
-        points_to_deduct: voucherInput.points_to_deduct,
+        points_to_deduct: voucherConfig.points_to_deduct,
       }))
     )
 
-    const response = transform(
-      { createdVoucher, deducted, voucherInput },
-      ({ createdVoucher, deducted, voucherInput }) => ({
-        code: createdVoucher.code,
-        promotion_id: createdVoucher.promotion.id,
-        voucher_level: voucherInput.voucher_level,
-        currency_code: voucherInput.currency_code,
-        voucher_value: voucherInput.voucher_value,
-        minimum_order_amount: voucherInput.minimum_order_amount,
-        points_spent: voucherInput.points_to_deduct,
-        remaining_points: deducted.remaining_points,
-      })
+    const voucher = createRewardVoucherPromotionStep(
+      transform({ input, voucherConfig }, ({ input, voucherConfig }) => ({
+        customer_id: input.customer_id,
+        voucher_level: voucherConfig.voucher_level,
+        points_to_deduct: voucherConfig.points_to_deduct,
+        voucher_value: voucherConfig.voucher_value,
+        minimum_order_amount: voucherConfig.minimum_order_amount,
+        currency_code: voucherConfig.currency_code,
+      }))
     )
+
+    const response = transform({ deducted, voucher }, ({ deducted, voucher }) => ({
+      code: voucher.code,
+      promotion_id: voucher.promotion_id,
+      voucher_level: voucher.voucher_level,
+      currency_code: voucher.currency_code,
+      voucher_value: voucher.voucher_value,
+      minimum_order_amount: voucher.minimum_order_amount,
+      points_spent: deducted.points_spent,
+      remaining_points: deducted.remaining_points,
+    }))
 
     return new WorkflowResponse(response)
   }
