@@ -14,9 +14,7 @@ export const PostStoreRedeemVoucherSchema = z.object({
     },
     z.union([z.literal(1), z.literal(2), z.literal(3)])
   ),
-  currency_code: z
-    .enum(["gbp", "usd", "eur", "cad"])
-    .default("gbp"),
+  currency_code: z.enum(["gbp", "usd", "eur", "cad"]).default("gbp"),
 })
 
 type PostStoreRedeemVoucherBody = z.infer<
