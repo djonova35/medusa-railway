@@ -20,6 +20,9 @@ module.exports = defineConfig({
   },
   admin: {},
   modules: [
+    // -----------------------------------------------
+    // FILE STORAGE (S3) — your existing setup
+    // -----------------------------------------------
     {
       resolve: "@medusajs/file",
       options: {
@@ -39,6 +42,10 @@ module.exports = defineConfig({
         ],
       },
     },
+
+    // -----------------------------------------------
+    // PAYMENT (Stripe) — your existing setup
+    // -----------------------------------------------
     {
       resolve: "@medusajs/payment",
       options: {
@@ -49,6 +56,59 @@ module.exports = defineConfig({
             options: {
               apiKey: process.env.STRIPE_API_KEY,
               webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+            },
+          },
+        ],
+      },
+    },
+
+    // -----------------------------------------------
+    // NOTIFICATION (Resend) — for order + welcome emails
+    // Requires:
+    //   RESEND_API_KEY
+    //   RESEND_FROM_EMAIL
+    // -----------------------------------------------
+    {
+      resolve: "@medusajs/medusa/notification",
+      options: {
+        providers: [
+          {
+            resolve: "./src/modules/resend-notification",
+            id: "resend",
+            options: {
+              channels: ["email"],
+              api_key: process.env.RESEND_API_KEY,
+              from: process.env.RESEND_FROM_EMAIL,
+            },
+          },
+        ],
+      },
+    },
+
+    // -----------------------------------------------
+    // AUTH — email/password + Google login
+    // Requires:
+    //   GOOGLE_CLIENT_ID
+    //   GOOGLE_CLIENT_SECRET
+    //   GOOGLE_CALLBACK_URL
+    // -----------------------------------------------
+    {
+      resolve: "@medusajs/medusa/auth",
+      options: {
+        providers: [
+          // Keep the default email/password login working
+          {
+            resolve: "@medusajs/medusa/auth-emailpass",
+            id: "emailpass",
+          },
+          // Enable Google OAuth login
+          {
+            resolve: "@medusajs/medusa/auth-google",
+            id: "google",
+            options: {
+              clientId: process.env.GOOGLE_CLIENT_ID,
+              clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+              callbackUrl: process.env.GOOGLE_CALLBACK_URL,
             },
           },
         ],
